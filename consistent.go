@@ -146,9 +146,10 @@ func (c *Consistent) UpdateLoad(host string, load int64) {
 //
 // should only be used with if you obtained a host with GetLeast
 func (c *Consistent) Inc(host string) {
+	c.Lock()
+	defer c.Unlock()
 	atomic.AddInt64(&c.loadMap[host].Load, 1)
 	atomic.AddInt64(&c.totalLoad, 1)
-
 }
 
 // Decrements the load of host by 1
@@ -170,6 +171,7 @@ func (c *Consistent) Remove(host string) bool {
 	c.Lock()
 	defer c.Unlock()
 
+	atomic.AddInt64(&c.totalLoad, -c.loadMap[host].Load)
 	for i := 0; i < replicationFactor; i++ {
 		h := c.hash(fmt.Sprintf("%s%d", host, i))
 		delete(c.hosts, h)
