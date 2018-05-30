@@ -148,6 +148,9 @@ func (c *Consistent) UpdateLoad(host string, load int64) {
 func (c *Consistent) Inc(host string) {
 	c.Lock()
 	defer c.Unlock()
+	if _, ok := c.loadMap[host]; !ok {
+		return
+	}
 	atomic.AddInt64(&c.loadMap[host].Load, 1)
 	atomic.AddInt64(&c.totalLoad, 1)
 }
@@ -170,7 +173,9 @@ func (c *Consistent) Done(host string) {
 func (c *Consistent) Remove(host string) bool {
 	c.Lock()
 	defer c.Unlock()
-
+	if _, ok := c.loadMap[host]; !ok {
+		return false
+	}
 	atomic.AddInt64(&c.totalLoad, -c.loadMap[host].Load)
 	for i := 0; i < replicationFactor; i++ {
 		h := c.hash(fmt.Sprintf("%s%d", host, i))
