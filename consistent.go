@@ -12,8 +12,8 @@ import (
 	"fmt"
 	"math"
 	"sort"
+	"strconv"
 	"sync"
-	"sync/atomic"
 
 	blake2b "github.com/minio/blake2b-simd"
 )
@@ -54,7 +54,7 @@ func (c *Consistent) Add(host string) {
 
 	c.loadMap[host] = &Host{Name: host, Load: 0}
 	for i := 0; i < replicationFactor; i++ {
-		h := c.hash(fmt.Sprintf("%s%d", host, i))
+		h := c.hash(host + strconv.Itoa(i))
 		c.hosts[h] = host
 		c.sortedSet = append(c.sortedSet, h)
 
@@ -137,9 +137,9 @@ func (c *Consistent) UpdateLoad(host string, load int64) {
 	if _, ok := c.loadMap[host]; !ok {
 		return
 	}
-	atomic.AddInt64(&c.totalLoad, -c.loadMap[host].Load)
+	c.totalLoad -= c.loadMap[host].Load
 	c.loadMap[host].Load = load
-	atomic.AddInt64(&c.totalLoad, load)
+	c.totalLoad += load
 }
 
 // Increments the load of host by 1
@@ -151,8 +151,8 @@ func (c *Consistent) Inc(host string) {
 	if _, ok := c.loadMap[host]; !ok {
 		return
 	}
-	atomic.AddInt64(&c.loadMap[host].Load, 1)
-	atomic.AddInt64(&c.totalLoad, 1)
+	c.loadMap[host].Load++
+	c.totalLoad++
 }
 
 // Decrements the load of host by 1
@@ -165,8 +165,8 @@ func (c *Consistent) Done(host string) {
 	if _, ok := c.loadMap[host]; !ok {
 		return
 	}
-	atomic.AddInt64(&c.loadMap[host].Load, -1)
-	atomic.AddInt64(&c.totalLoad, -1)
+	c.loadMap[host].Load--
+	c.totalLoad--
 }
 
 // Deletes host from the ring
@@ -176,9 +176,9 @@ func (c *Consistent) Remove(host string) bool {
 	if _, ok := c.loadMap[host]; !ok {
 		return false
 	}
-	atomic.AddInt64(&c.totalLoad, -c.loadMap[host].Load)
+	c.totalLoad -= c.loadMap[host].Load
 	for i := 0; i < replicationFactor; i++ {
-		h := c.hash(fmt.Sprintf("%s%d", host, i))
+		h := c.hash(host + strconv.Itoa(i))
 		delete(c.hosts, h)
 		c.delSlice(h)
 	}
@@ -198,6 +198,8 @@ func (c *Consistent) Hosts() (hosts []string) {
 
 // Returns the loads of all the hosts
 func (c *Consistent) GetLoads() map[string]int64 {
+	c.RLock()
+	defer c.RUnlock()
 	loads := map[string]int64{}
 
 	for k, v := range c.loadMap {
@@ -215,7 +217,7 @@ func (c *Consistent) GetLoads() map[string]int64 {
 func (c *Consistent) MaxLoad() int64 {
 	c.RLock()
 	defer c.RUnlock()
-	totalLoad := atomic.LoadInt64(&c.totalLoad)
+	totalLoad := c.totalLoad
 	if totalLoad == 0 {
 		totalLoad = 1
 	}
@@ -230,7 +232,7 @@ func (c *Consistent) MaxLoad() int64 {
 
 func (c *Consistent) loadOK(host string) bool {
 	// a safety check if someone performed c.Done more than needed
-	totalLoad := atomic.LoadInt64(&c.totalLoad)
+	totalLoad := c.totalLoad
 	if totalLoad < 0 {
 		totalLoad = 0
 	}
