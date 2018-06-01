@@ -137,9 +137,9 @@ func (c *Consistent) UpdateLoad(host string, load int64) {
 	if _, ok := c.loadMap[host]; !ok {
 		return
 	}
-	c.totalLoad -= c.loadMap[host].Load
+	atomic.AddInt64(&c.totalLoad, -c.loadMap[host].Load)
 	c.loadMap[host].Load = load
-	c.totalLoad += load
+	atomic.AddInt64(&c.totalLoad, load)
 }
 
 // Increments the load of host by 1
@@ -213,11 +213,14 @@ func (c *Consistent) GetLoads() map[string]int64 {
 // for more info:
 // https://research.googleblog.com/2017/04/consistent-hashing-with-bounded-loads.html
 func (c *Consistent) MaxLoad() int64 {
-	if c.totalLoad == 0 {
-		c.totalLoad = 1
+	c.RLock()
+	defer c.RUnlock()
+	totalLoad := atomic.LoadInt64(&c.totalLoad)
+	if totalLoad == 0 {
+		totalLoad = 1
 	}
 	var avgLoadPerNode float64
-	avgLoadPerNode = float64(c.totalLoad / int64(len(c.loadMap)))
+	avgLoadPerNode = float64(totalLoad / int64(len(c.loadMap)))
 	if avgLoadPerNode == 0 {
 		avgLoadPerNode = 1
 	}
@@ -227,12 +230,13 @@ func (c *Consistent) MaxLoad() int64 {
 
 func (c *Consistent) loadOK(host string) bool {
 	// a safety check if someone performed c.Done more than needed
-	if c.totalLoad < 0 {
-		c.totalLoad = 0
+	totalLoad := atomic.LoadInt64(&c.totalLoad)
+	if totalLoad < 0 {
+		totalLoad = 0
 	}
 
 	var avgLoadPerNode float64
-	avgLoadPerNode = float64((c.totalLoad + 1) / int64(len(c.loadMap)))
+	avgLoadPerNode = float64((totalLoad + 1) / int64(len(c.loadMap)))
 	if avgLoadPerNode == 0 {
 		avgLoadPerNode = 1
 	}
