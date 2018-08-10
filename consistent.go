@@ -44,12 +44,12 @@ func New() *Consistent {
 	}
 }
 
-func (c *Consistent) Add(host string) {
+func (c *Consistent) Add(host string) bool {
 	c.Lock()
 	defer c.Unlock()
 
 	if _, ok := c.loadMap[host]; ok {
-		return
+		return false
 	}
 
 	c.loadMap[host] = &Host{Name: host, Load: 0}
@@ -66,6 +66,7 @@ func (c *Consistent) Add(host string) {
 		}
 		return false
 	})
+	return true
 }
 
 // Returns the host that owns `key`.
